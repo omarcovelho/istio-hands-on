@@ -1,16 +1,17 @@
 package br.com.omarcovelho.api.composite.product;
 
 import lombok.AccessLevel;
-import lombok.Getter;
+import lombok.AllArgsConstructor;
+import lombok.Data;
 import lombok.NoArgsConstructor;
-import lombok.RequiredArgsConstructor;
 
-@RequiredArgsConstructor
-@Getter
+@Data
 @NoArgsConstructor(access = AccessLevel.PRIVATE, force = true)
+@AllArgsConstructor
 public class ReviewSummary {
 
     private final int reviewId;
     private final String author;
     private final String subject;
+    private final String content;
 }

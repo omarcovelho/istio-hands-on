@@ -1,9 +1,3 @@
-/*
- * @(#)ProductCompositeServiceImpl.java 1.0 22/03/2021
- *
- * Copyright (c) 2021, Embraer. All rights reserved. Embraer S/A
- * proprietary/confidential. Use is subject to license terms.
- */
 package br.com.omarcovelho.microservices.composite.product.services;
 
 import br.com.omarcovelho.api.composite.core.product.Product;
@@ -14,30 +8,83 @@ import br.com.omarcovelho.api.composite.product.ProductCompositeService;
 import br.com.omarcovelho.api.composite.product.RecommendationSummary;
 import br.com.omarcovelho.api.composite.product.ReviewSummary;
 import br.com.omarcovelho.api.composite.product.ServiceAddresses;
+import br.com.omarcovelho.util.exceptions.NotFoundException;
 import br.com.omarcovelho.util.http.ServiceUtil;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 import java.util.stream.Collectors;
 
-/**
- * @author marprado - Marco Prado
- * @version 1.0 22/03/2021
- */
 @RestController
 @RequiredArgsConstructor
+@Slf4j
 public class ProductCompositeServiceImpl implements ProductCompositeService {
 
     private final ServiceUtil serviceUtil;
     private final ProductCompositeIntegration integration;
 
     @Override
-    public ProductAggregate getProduct(final int productId) {
+    public void createCompositeProduct(ProductAggregate body) {
+
+        try {
+
+            log.debug("createCompositeProduct: creates a new composite entity for productId: {}", body.getProductId());
+
+            Product product = new Product(body.getProductId(), body.getName(), body.getWeight(), null);
+            integration.createProduct(product);
+
+            if (body.getRecommendations() != null) {
+                body.getRecommendations().forEach(r -> {
+                    Recommendation recommendation = new Recommendation(body.getProductId(), r.getRecommendationId(), r.getAuthor(), r.getRate(), r.getContent(), null);
+                    integration.createRecommendation(recommendation);
+                });
+            }
+
+            if (body.getReviews() != null) {
+                body.getReviews().forEach(r -> {
+                    Review review = new Review(body.getProductId(), r.getReviewId(), r.getAuthor(), r.getSubject(), r.getContent(), null);
+                    integration.createReview(review);
+                });
+            }
+
+            log.debug("createCompositeProduct: composite entites created for productId: {}", body.getProductId());
+
+        } catch (RuntimeException re) {
+            log.warn("createCompositeProduct failed", re);
+            throw re;
+        }
+    }
+
+    @Override
+    public ProductAggregate getCompositeProduct(int productId) {
+        log.debug("getCompositeProduct: lookup a product aggregate for productId: {}", productId);
+
         Product product = integration.getProduct(productId);
+        if (product == null) throw new NotFoundException("No product found for productId: " + productId);
+
         List<Recommendation> recommendations = integration.getRecommendations(productId);
+
         List<Review> reviews = integration.getReviews(productId);
+
+        log.debug("getCompositeProduct: aggregate entity found for productId: {}", productId);
+
         return createProductAggregate(product, recommendations, reviews, serviceUtil.getServiceAddress());
+    }
+
+    @Override
+    public void deleteCompositeProduct(int productId) {
+
+        log.debug("deleteCompositeProduct: Deletes a product aggregate for productId: {}", productId);
+
+        integration.deleteProduct(productId);
+
+        integration.deleteRecommendations(productId);
+
+        integration.deleteReviews(productId);
+
+        log.debug("getCompositeProduct: aggregate entities deleted for productId: {}", productId);
     }
 
     private ProductAggregate createProductAggregate(Product product, List<Recommendation> recommendations, List<Review> reviews, String serviceAddress) {
@@ -49,15 +96,15 @@ public class ProductCompositeServiceImpl implements ProductCompositeService {
 
         // 2. Copy summary recommendation info, if available
         List<RecommendationSummary> recommendationSummaries = (recommendations == null) ? null :
-                recommendations.stream()
-                        .map(r -> new RecommendationSummary(r.getRecommendationId(), r.getAuthor(), r.getRate()))
-                        .collect(Collectors.toList());
+             recommendations.stream()
+                .map(r -> new RecommendationSummary(r.getRecommendationId(), r.getAuthor(), r.getRate(), r.getContent()))
+                .collect(Collectors.toList());
 
         // 3. Copy summary review info, if available
         List<ReviewSummary> reviewSummaries = (reviews == null)  ? null :
-                reviews.stream()
-                        .map(r -> new ReviewSummary(r.getReviewId(), r.getAuthor(), r.getSubject()))
-                        .collect(Collectors.toList());
+            reviews.stream()
+                .map(r -> new ReviewSummary(r.getReviewId(), r.getAuthor(), r.getSubject(), r.getContent()))
+                .collect(Collectors.toList());
 
         // 4. Create info regarding the involved microservices addresses
         String productAddress = product.getServiceAddress();
